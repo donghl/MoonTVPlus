@@ -34,7 +34,7 @@ import {
   saveDanmakuSettings,
   searchAnime,
 } from '@/lib/danmaku/api';
-import type { DanmakuSelection, DanmakuSettings } from '@/lib/danmaku/types';
+import type { DanmakuAnime, DanmakuSelection, DanmakuSettings } from '@/lib/danmaku/types';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
@@ -178,6 +178,10 @@ function PlayPageClient() {
   const [danmakuCount, setDanmakuCount] = useState(0);
   const danmakuPluginRef = useRef<any>(null);
   const danmakuSettingsRef = useRef(danmakuSettings);
+
+  // 多条弹幕匹配结果
+  const [danmakuMatches, setDanmakuMatches] = useState<DanmakuAnime[]>([]);
+  const [showDanmakuSourceSelector, setShowDanmakuSourceSelector] = useState(false);
 
   useEffect(() => {
     danmakuSettingsRef.current = danmakuSettings;
@@ -1406,6 +1410,106 @@ function PlayPageClient() {
     await loadDanmaku(selection.episodeId);
   };
 
+  // 处理用户选择弹幕源
+  const handleDanmakuSourceSelect = async (selectedAnime: DanmakuAnime) => {
+    setShowDanmakuSourceSelector(false);
+    setDanmakuLoading(true);
+
+    try {
+      const title = videoTitleRef.current;
+      console.log('[弹幕] 用户选择弹幕源 - 视频:', title, '弹幕源:', selectedAnime.animeTitle);
+
+      // 获取剧集列表
+      const episodesResult = await getEpisodes(selectedAnime.animeId);
+
+      if (
+        episodesResult.success &&
+        episodesResult.bangumi.episodes.length > 0
+      ) {
+        // 保存剧集列表
+        setDanmakuEpisodesList(episodesResult.bangumi.episodes);
+
+        // 根据当前集数选择对应的弹幕
+        const currentEp = currentEpisodeIndexRef.current;
+        const episode =
+          episodesResult.bangumi.episodes[
+            Math.min(currentEp, episodesResult.bangumi.episodes.length - 1)
+          ];
+
+        if (episode) {
+          const selection: DanmakuSelection = {
+            animeId: selectedAnime.animeId,
+            episodeId: episode.episodeId,
+            animeTitle: selectedAnime.animeTitle,
+            episodeTitle: episode.episodeTitle,
+          };
+
+          setCurrentDanmakuSelection(selection);
+
+          // 保存选择记忆
+          saveDanmakuMemory(
+            title,
+            selection.animeId,
+            selection.episodeId,
+            selection.animeTitle,
+            selection.episodeTitle
+          );
+
+          // 加载弹幕
+          await loadDanmaku(episode.episodeId);
+
+          console.log('用户选择弹幕源:', selection);
+        }
+      } else {
+        console.warn('未找到剧集信息');
+      }
+    } catch (error) {
+      console.error('加载弹幕失败:', error);
+    } finally {
+      setDanmakuLoading(false);
+    }
+  };
+
+  // 手动重新选择弹幕源（忽略记忆）
+  const handleReselectDanmakuSource = async () => {
+    const title = videoTitleRef.current;
+    if (!title) {
+      console.warn('视频标题为空，无法搜索弹幕');
+      return;
+    }
+
+    console.log('[弹幕] 用户手动重新选择弹幕源 - 视频:', title);
+    setDanmakuLoading(true);
+
+    try {
+      const searchResult = await searchAnime(title);
+
+      if (searchResult.success && searchResult.animes.length > 0) {
+        // 如果有多个匹配结果，让用户选择
+        if (searchResult.animes.length > 1) {
+          console.log(`[弹幕] 找到 ${searchResult.animes.length} 个弹幕源`);
+          setDanmakuMatches(searchResult.animes);
+          setShowDanmakuSourceSelector(true);
+          setDanmakuLoading(false);
+          return;
+        }
+
+        // 只有一个结果，直接使用
+        const anime = searchResult.animes[0];
+        await handleDanmakuSourceSelect(anime);
+      } else {
+        console.warn('[弹幕] 未找到匹配的弹幕');
+        if (artPlayerRef.current) {
+          artPlayerRef.current.notice.show = '未找到匹配的弹幕源';
+        }
+        setDanmakuLoading(false);
+      }
+    } catch (error) {
+      console.error('[弹幕] 搜索失败:', error);
+      setDanmakuLoading(false);
+    }
+  };
+
   // 自动搜索并加载弹幕
   const autoSearchDanmaku = async () => {
     const title = videoTitleRef.current;
@@ -1414,10 +1518,12 @@ function PlayPageClient() {
       return;
     }
 
+    console.log('[弹幕] 开始自动搜索 - 视频标题:', title);
+
     // 检查是否有记忆
     const memory = loadDanmakuMemory(title);
     if (memory) {
-      console.log('使用记忆的弹幕动漫:', memory.animeTitle);
+      console.log('[弹幕] 找到记忆 - 视频:', title, '→ 弹幕源:', memory.animeTitle);
 
       // 获取该动漫的所有剧集列表
       try {
@@ -1467,7 +1573,16 @@ function PlayPageClient() {
       const searchResult = await searchAnime(title);
 
       if (searchResult.success && searchResult.animes.length > 0) {
-        // 使用第一个搜索结果
+        // 如果有多个匹配结果，让用户选择
+        if (searchResult.animes.length > 1) {
+          console.log(`找到 ${searchResult.animes.length} 个弹幕源，等待用户选择`);
+          setDanmakuMatches(searchResult.animes);
+          setShowDanmakuSourceSelector(true);
+          setDanmakuLoading(false);
+          return;
+        }
+
+        // 只有一个结果，直接使用
         const anime = searchResult.animes[0];
 
         // 获取剧集列表
@@ -2615,6 +2730,117 @@ function PlayPageClient() {
 
   return (
     <PageLayout activePath='/play'>
+      {/* 弹幕源选择对话框 */}
+      {showDanmakuSourceSelector && danmakuMatches.length > 0 && (
+        <div className='fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm'>
+          <div className='relative w-full max-w-2xl max-h-[80vh] mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden'>
+            {/* 标题栏 */}
+            <div className='sticky top-0 z-10 bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4'>
+              <h3 className='text-xl font-bold text-white flex items-center gap-2'>
+                <svg className='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z' />
+                </svg>
+                选择弹幕源
+              </h3>
+              <p className='text-sm text-white/90 mt-1'>
+                找到 {danmakuMatches.length} 个匹配的弹幕源，请选择一个
+              </p>
+            </div>
+
+            {/* 列表区域 */}
+            <div className='overflow-y-auto max-h-[60vh] p-4'>
+              <div className='space-y-3'>
+                {danmakuMatches.map((anime) => (
+                  <button
+                    key={anime.animeId}
+                    onClick={() => handleDanmakuSourceSelect(anime)}
+                    className='w-full flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-700/50
+                             hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all
+                             duration-200 text-left group border-2 border-transparent
+                             hover:border-green-500 hover:shadow-lg'
+                  >
+                    {/* 封面 */}
+                    {anime.imageUrl && (
+                      <div className='flex-shrink-0 w-16 h-24 rounded-lg overflow-hidden shadow-md
+                                    group-hover:shadow-xl transition-shadow duration-200'>
+                        <img
+                          src={anime.imageUrl}
+                          alt={anime.animeTitle}
+                          className='w-full h-full object-cover'
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* 信息 */}
+                    <div className='flex-1 min-w-0'>
+                      <h4 className='text-base font-bold text-gray-900 dark:text-white
+                                   group-hover:text-green-600 dark:group-hover:text-green-400
+                                   transition-colors duration-200 line-clamp-2'>
+                        {anime.animeTitle}
+                      </h4>
+
+                      <div className='flex flex-wrap gap-2 mt-2'>
+                        {anime.typeDescription && (
+                          <span className='inline-flex items-center px-2 py-1 rounded-md
+                                         bg-blue-100 dark:bg-blue-900/30 text-blue-700
+                                         dark:text-blue-300 text-xs font-medium'>
+                            {anime.typeDescription}
+                          </span>
+                        )}
+                        {anime.episodeCount && (
+                          <span className='inline-flex items-center px-2 py-1 rounded-md
+                                         bg-purple-100 dark:bg-purple-900/30 text-purple-700
+                                         dark:text-purple-300 text-xs font-medium'>
+                            {anime.episodeCount} 集
+                          </span>
+                        )}
+                        {anime.startDate && (
+                          <span className='inline-flex items-center px-2 py-1 rounded-md
+                                         bg-gray-100 dark:bg-gray-600 text-gray-700
+                                         dark:text-gray-300 text-xs font-medium'>
+                            {anime.startDate}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 选择图标 */}
+                    <div className='flex-shrink-0 self-center'>
+                      <svg className='w-6 h-6 text-gray-400 group-hover:text-green-500
+                                    transition-colors duration-200'
+                           fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                        <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2}
+                              d='M9 5l7 7-7 7' />
+                      </svg>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 底部操作栏 */}
+            <div className='sticky bottom-0 z-10 bg-white dark:bg-gray-800 border-t
+                          border-gray-200 dark:border-gray-700 px-6 py-4'>
+              <button
+                onClick={() => {
+                  setShowDanmakuSourceSelector(false);
+                  setDanmakuMatches([]);
+                }}
+                className='w-full px-4 py-2.5 bg-gray-100 dark:bg-gray-700
+                         hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700
+                         dark:text-gray-300 rounded-lg font-medium transition-colors
+                         duration-200'
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20'>
         {/* 第一行：影片标题 */}
         <div className='py-1'>
@@ -2761,6 +2987,36 @@ function PlayPageClient() {
                         </span>
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* 弹幕源切换按钮 - 当有弹幕加载完成且不在加载中时显示 */}
+                {!danmakuLoading && currentDanmakuSelection && (
+                  <div className='absolute top-0 right-0 m-4 z-[600]'>
+                    <button
+                      onClick={handleReselectDanmakuSource}
+                      className='flex items-center gap-2 bg-black/80 hover:bg-black/90 backdrop-blur-sm
+                               rounded-lg px-3 py-2 border border-green-500/30 hover:border-green-500/60
+                               transition-all duration-200 group'
+                      title='切换弹幕源'
+                    >
+                      <svg
+                        className='w-4 h-4 text-green-400 group-hover:text-green-300'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4'
+                        />
+                      </svg>
+                      <span className='text-sm font-medium text-green-400 group-hover:text-green-300'>
+                        切换弹幕源
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
