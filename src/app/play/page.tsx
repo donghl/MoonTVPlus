@@ -606,9 +606,9 @@ function PlayPageClient() {
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
 
-  // 判断剧集是否已完结
-  const isSeriesCompleted = (detail: SearchResult | null): boolean => {
-    if (!detail) return false;
+  // 判断剧集状态
+  const getSeriesStatus = (detail: SearchResult | null): 'completed' | 'ongoing' | 'unknown' => {
+    if (!detail) return 'unknown';
 
     // 方法1：通过 vod_remarks 判断
     if (detail.vod_remarks) {
@@ -620,23 +620,27 @@ function PlayPageClient() {
 
       // 如果包含连载关键词，则为连载中
       if (ongoingKeywords.some(keyword => remarks.includes(keyword))) {
-        return false;
+        return 'ongoing';
       }
 
       // 如果包含完结关键词，则为已完结
       if (completedKeywords.some(keyword => remarks.includes(keyword))) {
-        return true;
+        return 'completed';
       }
     }
 
     // 方法2：通过 vod_total 和实际集数对比判断
     if (detail.vod_total && detail.vod_total > 0 && detail.episodes && detail.episodes.length > 0) {
       // 如果实际集数 >= 总集数，则为已完结
-      return detail.episodes.length >= detail.vod_total;
+      if (detail.episodes.length >= detail.vod_total) {
+        return 'completed';
+      }
+      // 如果实际集数 < 总集数，则为连载中
+      return 'ongoing';
     }
 
-    // 无法判断，默认返回 false（连载中）
-    return false;
+    // 无法判断，返回 unknown
+    return 'unknown';
   };
 
   // 播放源优选函数
@@ -1776,7 +1780,9 @@ function PlayPageClient() {
               ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
               : true) &&
             (searchType
-              ? (searchType === 'tv' && result.episodes.length > 1) ||
+              ? // openlist 源跳过 episodes 长度检查，因为搜索时不返回详细播放列表
+                result.source === 'openlist' ||
+                (searchType === 'tv' && result.episodes.length > 1) ||
                 (searchType === 'movie' && result.episodes.length === 1)
               : true)
         );
@@ -1829,6 +1835,15 @@ function PlayPageClient() {
         );
         if (target) {
           detailData = target;
+
+          // 如果是 openlist 源且 episodes 为空，需要调用 detail 接口获取完整信息
+          if (detailData.source === 'openlist' && (!detailData.episodes || detailData.episodes.length === 0)) {
+            console.log('[Play] OpenList source has no episodes, fetching detail...');
+            const detailSources = await fetchSourceDetail(currentSource, currentId);
+            if (detailSources.length > 0) {
+              detailData = detailSources[0];
+            }
+          }
         } else {
           setError('未找到匹配结果');
           setLoading(false);
@@ -1848,6 +1863,15 @@ function PlayPageClient() {
       }
 
       console.log(detailData.source, detailData.id);
+
+      // 如果是 openlist 源且 episodes 为空，需要调用 detail 接口获取完整信息
+      if (detailData.source === 'openlist' && (!detailData.episodes || detailData.episodes.length === 0)) {
+        console.log('[Play] OpenList source has no episodes after selection, fetching detail...');
+        const detailSources = await fetchSourceDetail(detailData.source, detailData.id);
+        if (detailSources.length > 0) {
+          detailData = detailSources[0];
+        }
+      }
 
       setNeedPrefer(false);
       setCurrentSource(detailData.source);
@@ -2841,7 +2865,7 @@ function PlayPageClient() {
           total_episodes: detailRef.current?.episodes.length || 1,
           save_time: Date.now(),
           search_title: searchTitle,
-          is_completed: isSeriesCompleted(detailRef.current),
+          is_completed: getSeriesStatus(detailRef.current) === 'completed',
           vod_remarks: detailRef.current?.vod_remarks,
         });
         setFavorited(true);
@@ -4408,17 +4432,22 @@ function PlayPageClient() {
               )}
             </span>
             {/* 完结状态标识 */}
-            {detail && totalEpisodes > 1 && (
-              <span
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  isSeriesCompleted(detail)
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                }`}
-              >
-                {isSeriesCompleted(detail) ? '已完结' : '连载中'}
-              </span>
-            )}
+            {detail && totalEpisodes > 1 && (() => {
+              const status = getSeriesStatus(detail);
+              if (status === 'unknown') return null;
+
+              return (
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    status === 'completed'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                      : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                  }`}
+                >
+                  {status === 'completed' ? '已完结' : '连载中'}
+                </span>
+              );
+            })()}
           </h1>
         </div>
         {/* 第二行：播放器和选集 */}
