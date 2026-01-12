@@ -457,13 +457,15 @@ export default function PrivateLibraryPage() {
               观看自我收藏的高清视频吧
             </p>
           </div>
-          <button
-            onClick={() => router.push('/movie-request')}
-            className='flex items-center gap-2 px-3 py-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors'
-          >
-            <Film size={20} />
-            <span>求片</span>
-          </button>
+          {mounted && (
+            <button
+              onClick={() => router.push('/movie-request')}
+              className='flex items-center gap-2 px-3 py-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors'
+            >
+              <Film size={20} />
+              <span>求片</span>
+            </button>
+          )}
         </div>
 
         {/* 第一级：源类型选择（OpenList / Emby / 小雅） */}

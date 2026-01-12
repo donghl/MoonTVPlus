@@ -49,6 +49,15 @@ export default function MovieRequestPage() {
   const [myRequests, setMyRequests] = useState<MovieRequest[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [isFeatureEnabled, setIsFeatureEnabled] = useState(true);
+
+  // 检查求片功能是否启用
+  useEffect(() => {
+    const runtimeConfig = (window as any).RUNTIME_CONFIG;
+    if (runtimeConfig && runtimeConfig.ENABLE_MOVIE_REQUEST === false) {
+      setIsFeatureEnabled(false);
+    }
+  }, []);
 
   // TMDB搜索
   const handleSearch = async () => {
@@ -199,32 +208,43 @@ export default function MovieRequestPage() {
             求片
           </h1>
           <p className='text-sm text-gray-500 dark:text-gray-400 mt-1'>
-            搜索并提交您想看的影片
+            {isFeatureEnabled ? '搜索并提交您想看的影片' : '求片功能已关闭，仅可查看已求片列表'}
           </p>
         </div>
 
-        {/* 搜索框 */}
-        <div className='mb-6'>
-          <div className='flex gap-2'>
-            <input
-              type='text'
-              placeholder='搜索影片名称...'
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSearch();
-              }}
-              className='flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500'
-            />
-            <button
-              onClick={handleSearch}
-              disabled={!searchKeyword.trim() || isSearching}
-              className='px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed'
-            >
-              {isSearching ? '搜索中...' : '搜索'}
-            </button>
+        {/* 功能关闭提示 */}
+        {!isFeatureEnabled && (
+          <div className='mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg'>
+            <p className='text-sm text-yellow-800 dark:text-yellow-200'>
+              求片功能已被管理员关闭，您可以查看已提交的求片记录
+            </p>
           </div>
-        </div>
+        )}
+
+        {/* 搜索框 - 仅在功能启用时显示 */}
+        {isFeatureEnabled && (
+          <div className='mb-6'>
+            <div className='flex gap-2'>
+              <input
+                type='text'
+                placeholder='搜索影片名称...'
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSearch();
+                }}
+                className='flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              />
+              <button
+                onClick={handleSearch}
+                disabled={!searchKeyword.trim() || isSearching}
+                className='px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                {isSearching ? '搜索中...' : '搜索'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 我的求片列表 */}
         {searchResults.length === 0 && (
@@ -308,10 +328,10 @@ export default function MovieRequestPage() {
                   </p>
                   <button
                     onClick={() => handleRequest(item)}
-                    disabled={submitting}
+                    disabled={submitting || !isFeatureEnabled}
                     className='w-full px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
                   >
-                    {submitting ? '处理中...' : '求片'}
+                    {submitting ? '处理中...' : !isFeatureEnabled ? '功能已关闭' : '求片'}
                   </button>
                 </div>
               </div>

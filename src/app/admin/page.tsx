@@ -8726,7 +8726,7 @@ const XiaoyaConfigComponent = ({
 };
 
 // 求片列表组件
-const MovieRequestsComponent = ({ config, refreshConfig }: { config: AdminConfig | null; refreshConfig: () => void }) => {
+const MovieRequestsComponent = ({ config, refreshConfig }: { config: AdminConfig | null; refreshConfig: () => Promise<void> }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [requests, setRequests] = useState<any[]>([]);
@@ -8734,6 +8734,11 @@ const MovieRequestsComponent = ({ config, refreshConfig }: { config: AdminConfig
   const [pendingCount, setPendingCount] = useState(0);
   const [fulfilledCount, setFulfilledCount] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // 求片功能设置
+  const [enableMovieRequest, setEnableMovieRequest] = useState(config?.SiteConfig?.EnableMovieRequest ?? true);
+  const [movieRequestCooldown, setMovieRequestCooldown] = useState(config?.SiteConfig?.MovieRequestCooldown ?? 3600);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     loadRequests();
@@ -8795,9 +8800,100 @@ const MovieRequestsComponent = ({ config, refreshConfig }: { config: AdminConfig
     });
   };
 
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      if (!config) throw new Error('配置未加载');
+
+      const updatedConfig = {
+        ...config,
+        SiteConfig: {
+          ...config.SiteConfig,
+          EnableMovieRequest: enableMovieRequest,
+          MovieRequestCooldown: movieRequestCooldown,
+        },
+      };
+
+      const response = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedConfig),
+      });
+
+      if (!response.ok) throw new Error('保存失败');
+
+      showSuccess('求片设置已保存', showAlert);
+      await refreshConfig();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '保存失败', showAlert);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   return (
     <div className='space-y-4'>
-      <div className='flex gap-2 mb-4'>
+      {/* 求片功能设置 */}
+      <div className='p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <h3 className='text-lg font-medium text-gray-900 dark:text-gray-100 mb-4'>求片功能设置</h3>
+        <div className='space-y-4'>
+          <div className='flex items-center justify-between'>
+            <div>
+              <label className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                启用求片功能
+              </label>
+              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                关闭后用户将无法访问求片页面
+              </p>
+            </div>
+            <label className='relative inline-flex items-center cursor-pointer'>
+              <input
+                type='checkbox'
+                checked={enableMovieRequest}
+                onChange={(e) => setEnableMovieRequest(e.target.checked)}
+                className='sr-only peer'
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              求片冷却时间（秒）
+            </label>
+            <p className='text-xs text-gray-500 dark:text-gray-400 mb-2'>
+              用户两次求片之间的最小间隔时间，默认3600秒（1小时）
+            </p>
+            <input
+              type='number'
+              min='0'
+              value={movieRequestCooldown}
+              onChange={(e) => setMovieRequestCooldown(parseInt(e.target.value) || 0)}
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+            />
+            <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+              {movieRequestCooldown >= 3600
+                ? `约 ${Math.floor(movieRequestCooldown / 3600)} 小时 ${Math.floor((movieRequestCooldown % 3600) / 60)} 分钟`
+                : movieRequestCooldown >= 60
+                ? `约 ${Math.floor(movieRequestCooldown / 60)} 分钟`
+                : `${movieRequestCooldown} 秒`}
+            </p>
+          </div>
+
+          <button
+            onClick={handleSaveSettings}
+            disabled={savingSettings}
+            className={buttonStyles.primary}
+          >
+            {savingSettings ? '保存中...' : '保存设置'}
+          </button>
+        </div>
+      </div>
+
+      {/* 求片列表 */}
+      <div className='p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <h3 className='text-lg font-medium text-gray-900 dark:text-gray-100 mb-4'>求片列表</h3>
+        <div className='flex gap-2 mb-4'>
         <button
           onClick={() => setFilter('pending')}
           className={`px-4 py-2 rounded-lg ${
@@ -8882,6 +8978,7 @@ const MovieRequestsComponent = ({ config, refreshConfig }: { config: AdminConfig
           ))}
         </div>
       )}
+      </div>
 
       <AlertModal
         isOpen={alertModal.isOpen}
@@ -10419,7 +10516,7 @@ function AdminPageClient() {
                   isExpanded={expandedTabs.movieRequests}
                   onToggle={() => toggleTab('movieRequests')}
                 >
-                  <MovieRequestsComponent />
+                  <MovieRequestsComponent config={config} refreshConfig={fetchConfig} />
                 </CollapsibleTab>
               </div>
             </CollapsibleTab>

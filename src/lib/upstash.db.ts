@@ -65,7 +65,12 @@ export class UpstashRedisStorage implements IStorage {
     this._client = getUpstashRedisClient();
     // 创建兼容Redis API的client包装器（支持camelCase和lowercase）
     this.client = {
-      hSet: (key: string, data: Record<string, any>) => this._client.hset(key, data),
+      hSet: (key: string, field: string | Record<string, any>, value?: string) => {
+        if (typeof field === 'string' && value !== undefined) {
+          return this._client.hset(key, { [field]: value });
+        }
+        return this._client.hset(key, field as Record<string, any>);
+      },
       hset: (key: string, data: Record<string, any>) => this._client.hset(key, data),
       zAdd: (key: string, member: { score: number; value: string }) => this._client.zadd(key, { score: member.score, member: member.value }),
       zadd: (key: string, member: { score: number; value: string }) => this._client.zadd(key, { score: member.score, member: member.value }),
@@ -584,6 +589,7 @@ export class UpstashRedisStorage implements IStorage {
     playrecord_migrated?: boolean;
     favorite_migrated?: boolean;
     skip_migrated?: boolean;
+    last_movie_request_time?: number;
   } | null> {
     // 先从缓存获取
     const cached = userInfoCache?.get(userName);
@@ -677,6 +683,11 @@ export class UpstashRedisStorage implements IStorage {
       playrecord_migrated,
       favorite_migrated,
       skip_migrated,
+      last_movie_request_time: userInfo.last_movie_request_time
+        ? (typeof userInfo.last_movie_request_time === 'number'
+          ? userInfo.last_movie_request_time
+          : parseInt(userInfo.last_movie_request_time as string, 10))
+        : undefined,
     };
 
     // 存入缓存

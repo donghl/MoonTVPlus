@@ -71,6 +71,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // 检查求片功能是否启用并获取冷却时间
+    const { getConfig } = await import('@/lib/config');
+    const config = await getConfig();
+
+    if (config.SiteConfig.EnableMovieRequest === false) {
+      return NextResponse.json({ error: '求片功能已关闭' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { tmdbId, title, year, mediaType, season, poster, overview } = body;
 
@@ -80,10 +88,11 @@ export async function POST(request: NextRequest) {
 
     const storage = getStorage();
 
-    // 检查频率限制
-    const userInfo = await storage.getUserInfoV2(authInfo.username);
-    const rateLimit = parseInt(process.env.MOVIE_REQUEST_RATE_LIMIT || '3600') * 1000;
+    // 检查频率限制 - 使用配置中的冷却时间
+    const cooldownSeconds = config.SiteConfig.MovieRequestCooldown ?? 3600;
+    const rateLimit = cooldownSeconds * 1000;
 
+    const userInfo = await storage.getUserInfoV2(authInfo.username);
     if (userInfo?.last_movie_request_time) {
       const elapsed = Date.now() - userInfo.last_movie_request_time;
       if (elapsed < rateLimit) {
@@ -163,11 +172,16 @@ export async function POST(request: NextRequest) {
     await storage.createMovieRequest(newRequest);
     await storage.addUserMovieRequest(authInfo.username, newRequest.id);
 
-    // 更新频率限制
-    await storage.setGlobalValue(
-      `user:${authInfo.username}:info:last_movie_request_time`,
+    // 更新频率限制 - 保存到用户信息的 hash 中
+    await storage.client.hSet(
+      `user:${authInfo.username}:info`,
+      'last_movie_request_time',
       Date.now().toString()
     );
+
+    // 清除用户信息缓存，确保下次读取到最新数据
+    const { userInfoCache } = await import('@/lib/user-cache');
+    userInfoCache?.delete(authInfo.username);
 
     // 给站长发送通知
     const ownerUsername = process.env.USERNAME;

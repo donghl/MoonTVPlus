@@ -659,6 +659,7 @@ export abstract class BaseRedisStorage implements IStorage {
     playrecord_migrated?: boolean;
     favorite_migrated?: boolean;
     skip_migrated?: boolean;
+    last_movie_request_time?: number;
   } | null> {
     const userInfo = await this.withRetry(() =>
       this.client.hGetAll(this.userInfoKey(userName))
@@ -678,6 +679,7 @@ export abstract class BaseRedisStorage implements IStorage {
       playrecord_migrated: userInfo.playrecord_migrated === 'true',
       favorite_migrated: userInfo.favorite_migrated === 'true',
       skip_migrated: userInfo.skip_migrated === 'true',
+      last_movie_request_time: userInfo.last_movie_request_time ? parseInt(userInfo.last_movie_request_time, 10) : undefined,
     };
   }
 

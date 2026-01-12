@@ -82,6 +82,7 @@ export default async function RootLayout({
   let aiEnablePlayPageEntry = false;
   let aiDefaultMessageNoVideo = '';
   let aiDefaultMessageWithVideo = '';
+  let enableMovieRequest = true;
   let customCategories = [] as {
     name: string;
     type: 'movie' | 'tv';
@@ -124,6 +125,8 @@ export default async function RootLayout({
     aiEnablePlayPageEntry = config.AIConfig?.EnablePlayPageEntry || false;
     aiDefaultMessageNoVideo = config.AIConfig?.DefaultMessageNoVideo || '';
     aiDefaultMessageWithVideo = config.AIConfig?.DefaultMessageWithVideo || '';
+    // 求片功能配置
+    enableMovieRequest = config.SiteConfig.EnableMovieRequest ?? true;
     // 检查是否启用了 OpenList 功能
     openListEnabled = !!(
       config.OpenListConfig?.Enabled &&
@@ -178,7 +181,7 @@ export default async function RootLayout({
     AI_ENABLE_PLAYPAGE_ENTRY: aiEnablePlayPageEntry,
     AI_DEFAULT_MESSAGE_NO_VIDEO: aiDefaultMessageNoVideo,
     AI_DEFAULT_MESSAGE_WITH_VIDEO: aiDefaultMessageWithVideo,
-    ENABLE_SOURCE_SEARCH: process.env.NEXT_PUBLIC_ENABLE_SOURCE_SEARCH !== 'false',
+    ENABLE_MOVIE_REQUEST: enableMovieRequest,
   };
 
   return (

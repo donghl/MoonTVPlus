@@ -40,6 +40,9 @@ export interface AdminConfig {
     TurnstileSiteKey?: string; // Cloudflare Turnstile Site Key
     TurnstileSecretKey?: string; // Cloudflare Turnstile Secret Key
     DefaultUserTags?: string[]; // 新注册用户的默认用户组
+    // 求片功能配置
+    EnableMovieRequest?: boolean; // 启用求片功能
+    MovieRequestCooldown?: number; // 求片冷却时间（秒），默认3600
     // OIDC配置
     EnableOIDCLogin?: boolean; // 启用OIDC登录
     EnableOIDCRegistration?: boolean; // 启用OIDC注册
