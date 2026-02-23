@@ -14,6 +14,10 @@ import { SearchResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
+// 内存中记录最后执行时间（毫秒时间戳）
+let lastExecutionTime = 0;
+const COOLDOWN_MS = 10 * 60 * 1000; // 10分钟冷却时间
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { password: string } }
@@ -28,8 +32,31 @@ export async function GET(
     );
   }
 
+  // 检查冷却时间
+  const now = Date.now();
+  const timeSinceLastExecution = now - lastExecutionTime;
+
+  if (lastExecutionTime > 0 && timeSinceLastExecution < COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((COOLDOWN_MS - timeSinceLastExecution) / 1000);
+    const remainingMinutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    console.log(`Cron job skipped: cooldown period active. Remaining: ${remainingMinutes}m ${seconds}s`);
+
+    return NextResponse.json({
+      success: false,
+      message: 'Cron job is in cooldown period',
+      remainingSeconds,
+      nextAvailableTime: new Date(lastExecutionTime + COOLDOWN_MS).toISOString(),
+      timestamp: new Date().toISOString(),
+    }, { status: 429 });
+  }
+
   try {
     console.log('Cron job triggered:', new Date().toISOString());
+
+    // 更新最后执行时间
+    lastExecutionTime = now;
 
     cronJob();
 
